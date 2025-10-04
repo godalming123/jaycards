@@ -1,9 +1,9 @@
 <script lang="ts">
-  import Dialog from '../lib/Dialog.svelte'
-  import TextInput from '../lib/TextInput.svelte'
-  import type { LocalStorageState } from '../lib/utils'
+  import Dialog from '$lib/Dialog.svelte'
+  import TextInput from '$lib/TextInput.svelte'
+  import {decks, downloadedDecks} from '$lib/localStorage'
 
-  let {localStorage = $bindable({} as LocalStorageState), nameOfOpenDeck = $bindable("")} = $props()
+  let {nameOfOpenDeck = $bindable("")} = $props()
 
   let setDialogOpen = $state(false)
   let setDialogClosed = $state(false)
@@ -28,7 +28,7 @@
 
     if (addDeckDialogState.newDeckName == "") {
       addDeckDialogState.nameError = `Decks must have a name`
-    } else if (Object.hasOwn(localStorage.decks, addDeckDialogState.newDeckName)) {
+    } else if (Object.hasOwn($decks, addDeckDialogState.newDeckName)) {
       addDeckDialogState.nameError = `There is already a deck called "${addDeckDialogState.newDeckName}"`
     }
 
@@ -41,7 +41,8 @@
     } else if (addDeckDialogState.urlError != "") {
       focusDeckUrlInput = !focusDeckUrlInput
     } else {
-      localStorage.decks[addDeckDialogState.newDeckName] = addDeckDialogState.newDeckUrl
+      // TODO: Download the deck from the URL, and save it in `downloadedDecks`
+      decks.set(addDeckDialogState.newDeckName, addDeckDialogState.newDeckUrl)
       setDialogClosed = !setDialogClosed
     }
   }
@@ -57,10 +58,10 @@
 <button onclick={startAddingDeck}>Add deck Ⓐ</button>
 
 <ul style="padding: 0; margin: 0.5rem 0; display: flex; flex-direction: column; gap: 0.25rem;">
-  {#each Object.entries(localStorage.decks) as [deckName, _]}
+  {#each Object.entries($decks) as [deckName, _]}
     <li style="display: flex;">
       <button onclick={() => {nameOfOpenDeck = deckName}}>{deckName}</button>
-      <button style="margin-left: auto;" onclick={() => delete localStorage.decks[deckName]}>Delete</button>
+      <button style="margin-left: auto;" onclick={() => decks.delete(deckName)}>Delete</button>
     </li>
   {/each}
 </ul>

@@ -3,7 +3,7 @@ WARN: You cannot use !important on the display attribute of the inline styles
 
 Properties of this component:
 
-- Doesn't allow the user to focus outisde the dialog
+- Doesn't allow the user to focus outside the dialog
 - Doesn't allow the user to use elements outside the dialog
 - Automatically closes when either:
   - The user presses escape

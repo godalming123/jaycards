@@ -1,6 +1,16 @@
 <script lang="ts">
-  import type { LocalStorageState } from '../lib/utils'
-  let {localStorage = $bindable({} as LocalStorageState), nameOfOpenDeck = $bindable("")} = $props()
+  import { decks, downloadedDecks } from "$lib/localStorage"
+  let {nameOfOpenDeck = $bindable("")} = $props()
+  $effect(() => {
+    const url = $decks[nameOfOpenDeck]
+    if (url != null && $downloadedDecks[url] == null) {
+      // TODO: Download the deck and add it to `downloadedDecks`
+    }
+  })
 </script>
 <button onclick={() => nameOfOpenDeck = ""}>Home</button>
-<span>Deck called {nameOfOpenDeck}</span>
+{#if $decks[nameOfOpenDeck] != null}
+  <span>Deck called {nameOfOpenDeck}</span>
+{:else}
+  <span>There isn't a deck called "{nameOfOpenDeck}"</span>
+{/if}

@@ -1,5 +1,9 @@
 # Jay cards
 
+## Try it
+
+https://godalming123.github.io/jaycards/
+
 ## Local development
 
 ```sh
