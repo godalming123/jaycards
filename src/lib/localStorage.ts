@@ -1,143 +1,192 @@
-import * as z from "zod"
 import { writable } from "svelte/store"
-import { tryRemovePrefix, getLocalStorage } from "$lib/utils"
+import { getLocalStorage } from "$lib/utils"
 
-const List = z.object({
-  get heading() {
-    return FormattedText
-  },
-  get items() {
-    return z.array(FormattedText)
-  }
-})
+export function getFlashcardRenderFunctions() {
+  return (window as any).flashcards as Record<string, () => Element>
+}
 
-const FormattedText = z.union([List])
+type LocalStorageChange = {
+  type: "createDeck",
+  deckName: string,
+  deck: FlashcardDeck,
+} | {
+  type: "deleteDeck",
+  deckName: string,
+} | {
+  type: "setSpacedRepetitionFrequency",
+  deckName: string,
+  flashcardName: string,
+  newFrequency: number,
+}
 
-export const FlashcardDeck = z.record(z.string(), z.object({
-  dependencies: z.array(z.string()),
-  contents: FormattedText,
-})).refine((deck) => {
-  const keys = Array.from(Object.keys(deck))
+const code = "code"
+const spacedRepetitionFrequency = "spaced-repetition-frequency"
+
+type SpacedRepetitionData = {frequency: number}
+
+type LocalStorageKey = {
+  type: typeof code,
+  deckName: string,
+} | {
+  type: typeof spacedRepetitionFrequency,
+  deckName: string,
+  flashcardName: string,
+}
+
+function deserializeLocalStorageKey(key: string): undefined | LocalStorageKey {
   let index = 0
-  for (const flashcard of Object.values(deck)) {
-    for (const dependency in flashcard.dependencies) {
-      const dependencyIndex = keys.indexOf(dependency)
-      // The dependency must be a flashcard that is defined before this
-      // flashcard (this is necersarry to prevent circular dependencies)
-      if (dependencyIndex == -1 || dependencyIndex >= index) {
-        return false
-      }
+
+  function parseString() {
+    while (index < key.length && key[index] == " ") {
+      index += 1
+    }
+    let lengthStr = ""
+    while (index < key.length && key[index] != ":") {
+      lengthStr += key[index]
+      index += 1
     }
     index += 1
+    const length = parseInt(lengthStr)
+    index += length
+    return key.substring(index-length, index)
   }
-  return true
-})
 
-const deckPrefix = "deck-"
-const downloadedDeckPrefix = "downloaded-deck-"
-
-export type DownloadedDeck = z.infer<typeof FlashcardDeck>
-
-const defaultDecks = {} as Record<string, string>
-const defaultDownloadedDecks = {} as Record<string, DownloadedDeck>
-const decksWritable = writable(defaultDecks)
-const downloadedDecksWritable = writable(defaultDownloadedDecks)
-
-function handleStorageEvent(event: StorageEvent) {
-  if (event.storageArea == localStorage) {
-    if (event.key == null) {throw new Error()}
-    let key: string | null = null
-    if ((key = tryRemovePrefix(event.key, deckPrefix)) != null) {
-      decksWritable.update(value => {
-        if (key == null) {throw new Error()}
-        if (event.newValue == null) {
-          delete value[key]
-        } else {
-          value[key] = event.newValue
-        }
-        return value
-      })
-    } else if ((key = tryRemovePrefix(event.key, downloadedDeckPrefix)) != null) {
-      downloadedDecksWritable.update(value => {
-        if (key == null) {throw new Error()}
-        if (event.newValue == null) {
-          delete value[key]
-        } else {
-          value[key] = JSON.parse(event.newValue)
-        }
-        return value
-      })
-    }
+  if (key.startsWith(code)) {
+    index += code.length
+    return {type: code, deckName: parseString()}
+  } else if (key.startsWith(spacedRepetitionFrequency)) {
+    index += spacedRepetitionFrequency.length
+    return {type: spacedRepetitionFrequency, deckName: parseString(), flashcardName: parseString()}
   }
 }
+
+function setLocalStorageCodeItem(deckName: string, codeToSet: string) {
+  window.localStorage.setItem(`${code} ${deckName.length}:${deckName}`, codeToSet)
+}
+function removeLocalStorageCodeItem(deckName: string) {
+  window.localStorage.removeItem(`${code} ${deckName.length}:${deckName}`)
+}
+
+function setLocalStorageSpacedRepetitionFrequency(deckName: string, flashcardName: string, frequency: number) {
+  window.localStorage.setItem(`${spacedRepetitionFrequency} ${deckName.length}:${deckName} ${flashcardName.length}:${flashcardName}`, frequency.toString())
+}
+function removeLocalStorageSpacedRepetitionFrequency(deckName: string, flashcardName: string) {
+  window.localStorage.removeItem(`${spacedRepetitionFrequency} ${deckName.length}:${deckName} ${flashcardName.length}:${flashcardName}`)
+}
+
+export type Flashcard = {
+  spacedRepetitionData: SpacedRepetitionData
+}
+export type FlashcardDeck = {
+  code: string,
+  cards: Record<string, Flashcard>,
+}
+
+const decksWritable = writable({} as Record<string, FlashcardDeck>)
 
 export function initLocalStorage() {
-  const initialised = window.localStorage.getItem("storage-initialised") == "true"
-  if (initialised) {
-    let decksValue = {} as Record<string, string>
-    let downloadedDecksValue = {} as Record<string, DownloadedDeck>
-    for (const [rawKey, value] of getLocalStorage()) {
-      let key: string | null = null
-      if ((key = tryRemovePrefix(rawKey, deckPrefix)) != null) {
-        decksValue[key] = value
-      } else if ((key = tryRemovePrefix(rawKey, downloadedDeckPrefix)) != null) {
-        downloadedDecksValue[key] = JSON.parse(value)
-      }
+  let decksValue = {} as Record<string, FlashcardDeck>
+  // TODO: Do not parse all the permanently stored state when the page is loaded
+  for (const [rawKey, value] of getLocalStorage()) {
+    const key = deserializeLocalStorageKey(rawKey)
+    if (key == undefined) {
+      continue
     }
-    decksWritable.set(decksValue)
-    downloadedDecksWritable.set(downloadedDecksValue)
-  } else {
-    for (const [key, value] of Object.entries(defaultDecks)) {
-      window.localStorage.setItem(deckPrefix + key, value)
+    if (!Object.hasOwn(decksValue, key.deckName)) {
+      decksValue[key.deckName] = {code: "", cards: {}}
     }
-    for (const [key, value] of Object.entries(defaultDownloadedDecks)) {
-      window.localStorage.setItem(downloadedDeckPrefix + key, JSON.stringify(value))
+    if (key.type == code) {
+      decksValue[key.deckName].code = value
+    } else if (key.type == spacedRepetitionFrequency) {
+      decksValue[key.deckName].cards[key.flashcardName] = {spacedRepetitionData: {frequency: parseFloat(value)}}
     }
-    window.localStorage.setItem("storage-initialised", "true")
   }
-  window.addEventListener("storage", handleStorageEvent)
+  decksWritable.set(decksValue)
 }
 
-export function deinitLocalStorage() {
-  window.removeEventListener("storage", handleStorageEvent)
+const localStorageSignals = new BroadcastChannel("local-storage")
+
+function updateDecks(change: LocalStorageChange, sendMessageAndUpdateLocalStorage: boolean) {
+  switch (change.type) {
+    case "createDeck":
+      decksWritable.update(decks => {
+        if (sendMessageAndUpdateLocalStorage) {
+          setLocalStorageCodeItem(change.deckName, change.deck.code)
+          for (const [flashcardName, flashcard] of Object.entries(change.deck.cards)) {
+            setLocalStorageSpacedRepetitionFrequency(change.deckName, flashcardName, flashcard.spacedRepetitionData.frequency)
+          }
+        }
+        decks[change.deckName] = change.deck
+        return decks
+      })
+      break
+    case "deleteDeck":
+      decksWritable.update(decks => {
+        if (sendMessageAndUpdateLocalStorage) {
+          removeLocalStorageCodeItem(change.deckName)
+          for (const [flashcardName, _flashcard] of Object.entries(decks[change.deckName].cards)) {
+            removeLocalStorageSpacedRepetitionFrequency(change.deckName, flashcardName)
+          }
+        }
+        delete decks[change.deckName]
+        return decks
+      })
+      break
+    case "setSpacedRepetitionFrequency":
+      decksWritable.update(decks => {
+        if (sendMessageAndUpdateLocalStorage) {
+          setLocalStorageSpacedRepetitionFrequency(change.deckName, change.flashcardName, change.newFrequency)
+        }
+        decks[change.deckName].cards[change.flashcardName].spacedRepetitionData.frequency = change.newFrequency
+        return decks
+      })
+  }
+  if (sendMessageAndUpdateLocalStorage) {
+    localStorageSignals.postMessage(change)
+  }
 }
 
-// In the following 2 objects, the `set` and `delete` functions update the
-// writable because for some reason the storage event is only received by other
-// tabs
+localStorageSignals.onmessage = ({data}: {data: LocalStorageChange}) => {
+  updateDecks(data, false)
+}
 
 export const decks = {
   subscribe: decksWritable.subscribe,
-  set: (name: string, url: string) => {
-    decksWritable.update(decks => {
-      decks[name] = url
-      return decks
-    })
-    window.localStorage.setItem(deckPrefix + name, url)
+  setSpacedRepetitionFrequency: (deckName: string, flashcardName: string, newFrequency: number) => {
+    updateDecks({type: "setSpacedRepetitionFrequency", flashcardName, deckName, newFrequency}, true)
   },
-  delete: (name: string) => {
-    decksWritable.update(decks => {
-      delete decks[name]
-      return decks
-    })
-    window.localStorage.removeItem(deckPrefix + name)
+  createDeck: (deckName: string, deck: FlashcardDeck) => {
+    updateDecks({type: "createDeck", deckName, deck}, true)
+  },
+  deleteDeck: (deckName: string) => {
+    updateDecks({type: "deleteDeck", deckName}, true)
   },
 }
 
-export const downloadedDecks = {
-  subscribe: downloadedDecksWritable.subscribe,
-  set: (url: string, value: DownloadedDeck) => {
-    downloadedDecksWritable.update(downloadedDecks => {
-      downloadedDecks[url] = value
-      return downloadedDecks
-    })
-    window.localStorage.setItem(downloadedDeckPrefix + url, JSON.stringify(value))
-  },
-  delete: (url: string) => {
-    downloadedDecksWritable.update(downloadedDecks => {
-      delete downloadedDecks[url]
-      return downloadedDecks
-    })
-    window.localStorage.removeItem(downloadedDeckPrefix + url)
-  },
+export function getTotalFrequency(deck: FlashcardDeck, excludedCards: string[]) {
+  let totalFrequency = 0
+  for (const [cardName, card] of Object.entries(deck.cards)) {
+    if (!excludedCards.includes(cardName)) {
+      totalFrequency += card.spacedRepetitionData.frequency
+    }
+  }
+  return totalFrequency
+}
+
+export function getNextFlashcard(
+  deck: FlashcardDeck,
+  random: number, // A number between 0 and 1
+  excludedCards: string[],
+) {
+  const number = random * getTotalFrequency(deck, excludedCards)
+  let currentFrequency = 0
+  for (const [cardName, card] of Object.entries(deck.cards)) {
+    if (!excludedCards.includes(cardName)) {
+      currentFrequency += card.spacedRepetitionData.frequency
+      if (currentFrequency >= number) {
+        return cardName
+      }
+    }
+  }
+  throw new Error("Unreachable")
 }

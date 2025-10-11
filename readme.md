@@ -1,5 +1,13 @@
 # Jay cards
 
+## Features
+
+| App      | Plaintext flashcards                                      | You can program flashcards to add interactivity                                                | Spaced repetition       | Multiple difficulty levels for flashcards |
+| -------- | --------------------------------------------------------- | ---------------------------------------------------------------------------------------------- | ----------------------- | ----------------------------------------- |
+| Jaycards | ✓ (flashcards are defined as code, so they are plaintext) | ✓ (using JS and browser standards)                                                             | ✓ (using custom system) | TODO                                      |
+| Anki     | ✓                                                         | ✓ (using JS and browser standards, but different flashcards cannot easily reuse the same code) | ✓                       | -                                         |
+| Quizlet  | ✗                                                         | ✗                                                                                              | -                       | -                                         |
+
 ## Try it
 
 https://godalming123.github.io/jaycards/

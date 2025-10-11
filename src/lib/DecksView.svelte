@@ -1,19 +1,20 @@
 <script lang="ts">
+  import { decks, getFlashcardRenderFunctions, type Flashcard } from '$lib/localStorage'
+  import {startingFrequencyForCard} from "$lib/spacedRepetition"
   import Dialog from '$lib/Dialog.svelte'
   import TextInput from '$lib/TextInput.svelte'
-  import {decks, downloadedDecks} from '$lib/localStorage'
+  import FileInput from '$lib/FileInput.svelte';
 
   let {nameOfOpenDeck = $bindable("")} = $props()
 
   let setDialogOpen = $state(false)
   let setDialogClosed = $state(false)
-  let focusDeckNameInput = $state(false)
-  let focusDeckUrlInput = $state(false)
   const addDeckDialogInitialState = {
     nameError: "",
-    urlError: "",
+    fileError: "",
     newDeckName: "",
-    newDeckUrl: "",
+    newDeckCode: undefined as FileList | undefined,
+    fileInputValue: "",
   }
   let addDeckDialogState = $state(addDeckDialogInitialState)
 
@@ -22,28 +23,37 @@
     setDialogOpen = !setDialogOpen
   }
 
-  function addDeck() {
-    addDeckDialogState.nameError = ""
-    addDeckDialogState.urlError = ""
-
+  function onAddDeckButtonClick() {
     if (addDeckDialogState.newDeckName == "") {
       addDeckDialogState.nameError = `Decks must have a name`
     } else if (Object.hasOwn($decks, addDeckDialogState.newDeckName)) {
       addDeckDialogState.nameError = `There is already a deck called "${addDeckDialogState.newDeckName}"`
-    }
-
-    if (addDeckDialogState.newDeckUrl == "") {
-      addDeckDialogState.urlError = `Must specify URL`
-    }
-
-    if (addDeckDialogState.nameError != "") {
-      focusDeckNameInput = !focusDeckNameInput
-    } else if (addDeckDialogState.urlError != "") {
-      focusDeckUrlInput = !focusDeckUrlInput
     } else {
-      // TODO: Download the deck from the URL, and save it in `downloadedDecks`
-      decks.set(addDeckDialogState.newDeckName, addDeckDialogState.newDeckUrl)
-      setDialogClosed = !setDialogClosed
+      addDeckDialogState.nameError = ""
+    }
+    let file = addDeckDialogState.newDeckCode?.item(0)
+    if (addDeckDialogState.newDeckCode == null || file == null) {
+      addDeckDialogState.fileError = `Must specify a file`
+    } else if (addDeckDialogState.newDeckCode.length > 1) {
+      addDeckDialogState.fileError = `Cannot specify more than 1 file`
+    } else {
+      file.text().then(text => {
+        import("data:text/javascript;base64," + btoa(text)).then(() => {
+          let cards = {} as Record<string, Flashcard>
+          for (const cardName of Object.keys(getFlashcardRenderFunctions())) {
+            cards[cardName] = {spacedRepetitionData: {frequency: startingFrequencyForCard}}
+          }
+          addDeckDialogState.fileError = ``
+          if (addDeckDialogState.nameError == "") {
+            decks.createDeck(addDeckDialogState.newDeckName, {code: text, cards})
+            setDialogClosed = !setDialogClosed
+          }
+        }).catch((e: any) => {
+          addDeckDialogState.fileError = `Failed to get run code: ${e.toString()}`
+        })
+      }).catch((e: any) => {
+        addDeckDialogState.fileError = `Failed to get code to run: ${e.toString()}`
+      })
     }
   }
 </script>
@@ -61,14 +71,16 @@
   {#each Object.entries($decks) as [deckName, _]}
     <li style="display: flex;">
       <button onclick={() => {nameOfOpenDeck = deckName}}>{deckName}</button>
-      <button style="margin-left: auto;" onclick={() => decks.delete(deckName)}>Delete</button>
+      <button style="margin-left: auto;" onclick={() => decks.deleteDeck(deckName)}>Delete</button>
     </li>
   {/each}
 </ul>
 
-<Dialog setOpen={setDialogOpen} setClosed={setDialogClosed} style="display: flex; flex-direction: column; gap: 0.1rem;">
-  <TextInput label="Name" error={addDeckDialogState.nameError} bind:value={addDeckDialogState.newDeckName} setFocused={focusDeckNameInput} onenter={() => focusDeckUrlInput = !focusDeckUrlInput} />
-  <TextInput label="URL"  error={addDeckDialogState.urlError}  bind:value={addDeckDialogState.newDeckUrl}  setFocused={focusDeckUrlInput}  onenter={addDeck}/>
-  <button onclick={addDeck}>Add ⏎</button>
-  <button onclick={() => setDialogClosed = !setDialogClosed}>Cancel ␛</button>
+<Dialog setOpen={setDialogOpen} setClosed={setDialogClosed} style="display: grid; gap: 0.1rem;">
+  <TextInput label="Name" error={addDeckDialogState.nameError} bind:value={addDeckDialogState.newDeckName} />
+  <FileInput label="File" error={addDeckDialogState.fileError} bind:files={addDeckDialogState.newDeckCode} bind:value={addDeckDialogState.fileInputValue} />
+  <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 0.1rem;">
+    <button onclick={onAddDeckButtonClick}>Add</button>
+    <button onclick={() => setDialogClosed = !setDialogClosed}>Cancel ␛</button>
+  </div>
 </Dialog>
